@@ -1,0 +1,48 @@
+name: Deploy to AWS App Runner
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-3
+          
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: hono-bun-app-runner
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Deploy to App Runner Image
+        id: deploy-apprunner
+        uses: awslabs/amazon-app-runner-deploy@main
+        with:
+          service: hono-bun
+          image: ${{ steps.build-image.outputs.image }}
+          access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          region: eu-west-3
+          cpu : 0.25
+          memory : 0.5
+          # Deprecated: wait-for-service-stability: true
+          # The new way to control service stability timeout
+          wait-for-service-stability-seconds: 1200
+
